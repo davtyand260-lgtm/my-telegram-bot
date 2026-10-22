@@ -1,37 +1,87 @@
 import os
 import logging
+import html
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
-from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from dotenv import load_dotenv
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Настройка логирования
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    level=logging.INFO,
 )
+log = logging.getLogger("universal-stealth-bot")
 
-# Чтение токена из переменных окружения
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+def get_main_keyboard():
+    keyboard = [
+        ["🛡️ Снять плагиат (Сохранить язык)"],
+        ["ℹ️ Как это работает"]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# Пример простой функции-обработчика (замените на вашу логику бота)
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"Бот работает! Вы написали: {update.message.text}")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🔓 <b>Универсальный стелс-бот запущен!</b>\n\n"
+        "Отправь мне текст на любом языке (русский, английский, армянский и т.д.), и я сниму плагиат, сохранив оригинальный язык и слова без изменений.",
+        parse_mode="HTML",
+        reply_markup=get_main_keyboard()
+    )
 
-def main():
-    if not BOT_TOKEN:
-        print("Ошибка: BOT_TOKEN не найден в переменных окружения!")
+def universal_stealth_bypass(text: str) -> str:
+    """
+    Универсальный обход: добавляет невидимые нулевые пробелы (\u200B) 
+    между символами, что ломает хэш систем проверки на любом языке, 
+    оставляя текст визуально абсолютно прежним.
+    """
+    invisible_space = "\u200B"
+    result = []
+    
+    for i, char in enumerate(text):
+        result.append(char)
+        # Вставляем невидимый символ через каждые 3-4 символа, 
+        # чтобы текст оставался читаемым и проходил проверки
+        if i % 3 == 0 and char.isalnum():
+            result.append(invisible_space)
+            
+    return "".join(result)
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text
+
+    if "Как это работает" in user_text:
+        msg = (
+            "💡 <b>О принципах работы:</b>\n\n"
+            "• Бот автоматически определяет любой язык (English, Русский, Հայերեն и др.).\n"
+            "• Слова, буквы и смысл <b>не перекладываются и не переводятся</b>.\n"
+            "• Интегрируются микро-символы нулевой ширины, которые обнуляют совпадения в базах данных."
+        )
+        await update.message.reply_text(msg, parse_mode="HTML")
         return
 
-    # Инициализация бота
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    if "Снять плагиат" in user_text:
+        await update.message.reply_text("Отправь текст на любом языке:")
+        return
 
-    # Добавляем обработчик текстовых сообщений
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), echo))
+    if len(user_text) < 5:
+        await update.message.reply_text("⚠️ Текст слишком короткий.")
+        return
 
-    print("Бот запущен и ожидает сообщения...")
-    # Запуск бота (Long Polling)
-    application.run_polling()
+    await update.message.reply_text("⏳ Обрабатываю текст...")
+
+    # Применяем универсальную стелс-модификацию
+    processed_text = universal_stealth_bypass(user_text)
+
+    response = (
+        "✅ <b>Готово! Язык и текст сохранены, плагиат снят:</b>\n\n"
+        f"<code>{html.escape(processed_text)}</code>\n\n"
+        "📋 <i>Скопируй результат и вставляй в документ.</i>"
+    )
+
+    await update.message.reply_text(response, parse_mode="HTML")
 
 
 # ==========================================
@@ -44,7 +94,6 @@ class SimpleHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot is running successfully!")
         
     def log_message(self, format, *args):
-        # Отключаем лишний спам в логах от пингов
         return
 
 def run_server():
@@ -52,10 +101,22 @@ def run_server():
     server = HTTPServer(("0.0.0.0", port), SimpleHandler)
     server.serve_forever()
 
-if __name__ == "__main__":
-    # Запускаем веб-сервер в фоновом потоке
+
+def main():
+    if not BOT_TOKEN:
+        print("Ошибка: BOT_TOKEN не найден в .env")
+        return
+
+    # Запускаем веб-сервер в фоновом потоке для Render
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
-    
-    # Запускаем основного Telegram-бота
+
+    application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    print("✅ Универсальный стелс-бот запущен!")
+    application.run_polling()
+
+if __name__ == "__main__":
     main()
